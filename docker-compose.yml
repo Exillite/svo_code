@@ -1,0 +1,47 @@
+version: '3'
+
+services:
+  mongo_db:
+    image: mongo
+
+    networks:
+      - custom
+    restart: always
+    ports:
+      - 27017:27017
+    volumes:
+      - db_data:/data/db
+
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: uvicorn main:app --host 0.0.0.0 --reload
+    restart: always
+    volumes:
+      - upload_files:/upload_files
+    ports:
+      - "8000:8000"
+    networks:
+      - custom
+    depends_on:
+      - mongo_db
+
+
+  bot:
+    build:
+      context: "./bot"
+      dockerfile: Dockerfile
+    restart: always
+    networks:
+      - custom
+
+networks:
+  custom:
+    driver: bridge
+
+
+volumes:
+  db_data:
+  upload_files:
