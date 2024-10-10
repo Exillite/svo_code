@@ -244,5 +244,22 @@ async def upload_file(files: List[UploadFile]):
 
 @app.post("/api/files/load/{file_name}", response_class=FileResponse)
 async def load_file(file_name: str):
-    return FileResponse(FILES_PATH + file_name)
+    try:
+        return FileResponse(FILES_PATH + file_name)
+    except Exception as e:
+        print(str(e))
 
+
+class GetBioS(BaseModel):
+    tg_id: int
+
+@app.post("/api/bio/get")
+async def get_bio(data: GetBioS):
+    user = await User.get(tg_id=data.tg_id)
+    if not user or not user.bio_id:
+        return
+    bio = await Bio.get(id=user.bio_id)
+    if not bio:
+        return
+    
+    return bio.to_response()
