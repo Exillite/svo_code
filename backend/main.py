@@ -10,9 +10,9 @@ from typing import Optional, List
 import uvicorn
 from contextlib import asynccontextmanager
 
-from mangodm import connect_to_mongo, close_mongo_connection
+from mangodm import connect_to_mongo, close_mongo_connection, db
 
-from models import User, Bio
+from models import User, Bio, Project, Work
 
 import datetime
 import time
@@ -20,7 +20,7 @@ import time
 from fastapi.responses import FileResponse
 
 
-MONGODB_CONNECTION_URL = "mongodb://svo_code-mongo_db_1"
+MONGODB_CONNECTION_URL = "mongodb://svodb"
 DATABASE_NAME = "test_database"
 
 
@@ -53,7 +53,7 @@ app.add_middleware(
 class UserCreateS(BaseModel):
     tg_id: int
 
-@app.create("/api/user")
+@app.post("/api/user")
 async def create_user(data: UserCreateS):
     new_user = User(tg_id=data.tg_id)
     await new_user.create()
@@ -63,16 +63,36 @@ class BioCreateS(BaseModel):
     tg_id: int
     name: str
 
-@app.creat("/api/bio")
+@app.post("/api/bio")
 async def creat_bio(data: BioCreateS):
     user = await User.get(tg_id=data.tg_id)
     if not user:
         return
-    new_bio = Bio(name=data.name)
+    new_bio = Bio(name=data.name, user_id=user.id)
     await new_bio.create()
     user.bio_id = new_bio.id
     await user.update()
     return {"status": "OK"}
+
+
+
+class BioAddSocialS(BaseModel):
+    tg_id: int
+    social: List[str]
+
+@app.post("/api/bio/social")
+async def bio_add_social(data: BioAddSocialS):
+    user = await User.get(tg_id=data.tg_id)
+    if not user or not user.bio_id:
+        return
+    bio = await Bio.get(id=user.bio_id)
+    if not bio:
+        return
+
+    bio.social = data.social
+    await bio.update()
+    return {"status": "OK"}
+
 
 
 class BioAddSocialS(BaseModel):
@@ -142,7 +162,7 @@ async def bio_add_tags(data: BioAddTagsS):
     if not bio:
         return
     
-    bio.tags = data.tags
+    bio.tags = data.tags + bio.prof
     await bio.update()
     return {"status": "OK"}
 
@@ -263,3 +283,119 @@ async def get_bio(data: GetBioS):
         return
     
     return bio.to_response()
+
+
+async def get_workers_by_tags(tags: List[str]):
+    cursor = db.db[Bio.Config.collection_name].find({"tags": {"$in": tags}})
+    models = []
+    
+    async for document in cursor:
+        tmp = await Bio.document_to_model(document)
+        models.append((len(set(tags) & set(tmp.tags)), tmp.user_id))
+        
+    models = sorted(models, key=lambda x: x[0])
+    
+    ret = []
+    for model in models:
+        ret.append(model[1])
+
+    return ret            
+
+
+async def get_tags_from_description(description: str) -> List[str] | str | None:
+    return []
+
+
+
+class CreateProkectS(BaseModel):
+    tg_id: str
+    description: str
+
+@app.post("/api/project/create")
+async def create_project(data: CreateProkectS):
+    user = await User.get(tg_id=data.tg_id)
+    if not user or not user.bio_id:
+        return
+    
+    tgs = await get_tags_from_description(data.description)
+    
+    if tgs is None:
+        return {"status": "retry"}
+    elif isinstance(tgs, str):
+        return {"status": "qestions", "text": tgs}
+    elif isinstance(tgs, list):
+        workers_ids = await get_workers_by_tags(tgs)
+        new_pjct = Project(customer_id=user.id, description=data.description, workers_is=workers_ids, tags=tgs)
+        await new_pjct.create()
+        
+        
+        workers_tg_ids = []
+        for wid in workers_ids:
+            worker = await User.get(id=wid)
+            if not worker:
+                continue
+            workers_tg_ids.append(worker.tg_id)
+        
+
+        return {"status": "OK", "workers_ids": workers_tg_ids}
+
+
+class CreateWorkS(BaseModel):
+    project_id: str
+    tg_id: int
+    chat_id: int
+
+@app.post("/api/work/create")
+async def create_work(data: CreateWorkS):
+    user = await User.get(tg_id=data.tg_id)
+    if not user or not user.bio_id:
+        return
+    
+    project = await Project.get(id=data.project_id)
+    
+    new_work = Work(customer_id=project.customer_id, worker_id=data.tg_id, chat_id=data.chat_id)
+    await new_work.create()
+    
+    await project.delete()
+
+    return "OK"
+
+
+class AddContractS(BaseModel):
+    chat_id: int
+    days: int
+    price: int
+    description: str
+    
+@app.post("/api/works/contract")
+async def add_contract(data: AddContractS):
+    user = await User.get(tg_id=data.tg_id)
+    if not user or not user.bio_id:
+        return
+    
+    work = await Work.get(chat_id=data.chat_id)
+    if not work:
+        return
+    
+    work.days = data.days
+    work.price = data.price
+    work.description = data.description
+    work.is_contracted = True
+    await work.update()
+    
+    return "OK"
+
+
+@app.post("/api/works/contract/delete/{chat_id}")
+async def add_contract(data: AddContractS):
+    user = await User.get(tg_id=data.tg_id)
+    if not user or not user.bio_id:
+        return
+    
+    work = await Work.get(chat_id=data.chat_id)
+    if not work:
+        return
+    
+    await work.delete()
+    
+    return "OK"

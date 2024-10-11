@@ -4,8 +4,8 @@ from datetime import datetime
 
 class User(Document):
     tg_id: int
-    bio_id: Optional[str] = None
-    done_works: int = 0
+    bio_id: Optional[str]
+    done_works: int
 
     class Config:
         collection_name = "Users"

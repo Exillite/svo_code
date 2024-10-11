@@ -3,7 +3,7 @@ version: '3'
 services:
   mongo_db:
     image: mongo
-
+    container_name: svodb
     networks:
       - custom
     restart: always
@@ -29,13 +29,13 @@ services:
       - mongo_db
 
 
-  bot:
-    build:
-      context: "./bot"
-      dockerfile: Dockerfile
-    restart: always
-    networks:
-      - custom
+  # bot:
+  #   build:
+  #     context: "./bot"
+  #     dockerfile: Dockerfile
+  #   restart: always
+  #   networks:
+  #     - custom
 
 networks:
   custom:
